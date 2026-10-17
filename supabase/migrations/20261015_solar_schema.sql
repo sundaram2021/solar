@@ -66,7 +66,8 @@ create table if not exists public.sub_agents (
   steering text not null default '',
   result jsonb not null default '{}'::jsonb,
   blocked_reason text,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 create index if not exists sub_agents_user_status_idx
   on public.sub_agents (user_id, status, created_at desc);
@@ -75,6 +76,7 @@ alter table public.sub_agents add column if not exists run_log text not null def
 alter table public.sub_agents add column if not exists steering text not null default '';
 alter table public.sub_agents add column if not exists result jsonb not null default '{}'::jsonb;
 alter table public.sub_agents add column if not exists blocked_reason text;
+alter table public.sub_agents add column if not exists updated_at timestamptz not null default now();
 alter table public.sub_agents drop column if exists skills;
 alter table public.sub_agents drop column if exists skill_definitions;
 alter table public.sub_agents drop column if exists eval_score;
@@ -271,7 +273,23 @@ create policy via_agent on public.intent_violations for all
     where sa.id = intent_violations.sub_agent_id and sa.user_id = auth.uid()));
 
 -- ============================================================================
--- 10) Realtime: publish the tables the dashboard subscribes to.
+-- 10) updated_at maintenance: keep the column fresh so the reaper can tell a
+--     genuinely stuck run (no progress for 40min) from a healthy long run.
+-- ============================================================================
+create or replace function public.set_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end $$;
+
+drop trigger if exists sub_agents_set_updated_at on public.sub_agents;
+create trigger sub_agents_set_updated_at
+  before update on public.sub_agents
+  for each row execute function public.set_updated_at();
+
+-- ============================================================================
+-- 11) Realtime: publish the tables the dashboard subscribes to.
 -- ============================================================================
 do $$
 declare t text;

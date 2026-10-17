@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+scripts/e2e-results.json
 
 # next.js
 /.next/
