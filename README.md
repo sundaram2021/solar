@@ -7,6 +7,13 @@ Solar continuously monitors your GitHub repositories, classifies incoming issues
 
 ---
 
+## Demo 
+
+
+https://github.com/user-attachments/assets/d462ad6e-9085-4084-bcc5-c77cd187ee62
+
+
+
 ## ✨ Features
 
 - **Automated GitHub Intake & Event Queue**: Listens to polled events and webhooks for repository issues, pull requests, and review comments with deduplication and tracking.
