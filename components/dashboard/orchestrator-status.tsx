@@ -1,0 +1,185 @@
+"use client";
+
+import React, { useState, useEffect, useCallback } from "react";
+import { Radio, Clock, Zap, ShieldAlert } from "lucide-react";
+import { GithubIcon } from "@/components/common/github-icon";
+import { SubAgent, GithubEvent, UserSettings } from "@/types/solar-types";
+
+interface StatusData {
+  awaiting: number;
+  running: number;
+  completedToday: number;
+  blocked: number;
+  lastEventAt: string | null;
+  stale: boolean;
+  autoApprove: boolean;
+  loadError: boolean;
+}
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return "never";
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  return `${Math.floor(s / 3600)}h ago`;
+}
+
+export function OrchestratorStatus() {
+  const [data, setData] = useState<StatusData | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const [aRes, evRes, sRes] = await Promise.all([
+        fetch("/api/agents"),
+        fetch("/api/agents?which=events"),
+        fetch("/api/settings"),
+      ]);
+      if (!aRes.ok) throw new Error(`agents (${aRes.status})`);
+      const { agents } = (await aRes.json()) as { agents: SubAgent[] };
+      const events = evRes.ok
+        ? (((await evRes.json()) as { events: GithubEvent[] }).events ?? [])
+        : [];
+      const settings = sRes.ok
+        ? (((await sRes.json()) as { settings: UserSettings }).settings)
+        : null;
+      const today = new Date().toISOString().slice(0, 10);
+      let awaiting = 0;
+      let running = 0;
+      let completedToday = 0;
+      let blocked = 0;
+      for (const a of agents) {
+        if (a.status === "awaiting_approval") awaiting++;
+        else if (a.status === "running") running++;
+        else if (a.status === "blocked") blocked++;
+        else if (a.status === "completed" && (a.created_at ?? "").slice(0, 10) === today) completedToday++;
+      }
+      const lastEventAt = events[0]?.created_at ?? null;
+      setData({
+        awaiting,
+        running,
+        completedToday,
+        blocked,
+        lastEventAt,
+        stale: lastEventAt
+          ? Date.now() - new Date(lastEventAt).getTime() > 10 * 60 * 1000
+          : true,
+        autoApprove: settings?.orchestrator_auto_approve ?? false,
+        loadError: false,
+      });
+    } catch {
+      // Don't report "stale cron" when the fetch itself failed — flag the
+      // strip as errored so the user retries instead of misdiagnosing.
+      setData((prev) =>
+        prev
+          ? { ...prev, loadError: true }
+          : {
+              awaiting: 0,
+              running: 0,
+              completedToday: 0,
+              blocked: 0,
+              lastEventAt: null,
+              stale: false,
+              autoApprove: false,
+              loadError: true,
+            }
+      );
+    }
+  }, []);
+
+  const handleRetry = useCallback(() => {
+    setData(null);
+    void load().catch(() => {});
+  }, [load]);
+
+  useEffect(() => {
+    // Intentional: fetch status on mount, then poll + refresh events.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load().catch(() => {});
+    const t = setInterval(() => void load().catch(() => {}), 15000);
+    const onRefresh = () => void load().catch(() => {});
+    window.addEventListener("solar:refresh", onRefresh);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("solar:refresh", onRefresh);
+    };
+  }, [load]);
+
+  const stale = data?.stale ?? true;
+  const loadError = data?.loadError ?? false;
+
+  if (!data) {
+    return (
+      <section className="panel status-strip" aria-busy="true" aria-label="Orchestrator status">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <div key={i} className="status-item">
+            <div className="animate-pulse rounded-md bg-muted/60 h-8 w-24" aria-hidden="true" />
+          </div>
+        ))}
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel status-strip" aria-label="Orchestrator status">
+      <div className="status-item">
+        <GithubIcon className="size-4" />
+        <div>
+          <p>GitHub live</p>
+          <small>OAuth connected</small>
+        </div>
+      </div>
+      <div className="status-item" title={loadError ? "Couldn't refresh status — click to retry" : stale ? "No GitHub events seen for a while — check the poller" : "Poller is delivering events"}>
+        <Radio className="size-4" />
+        <div>
+          <p>Poll {timeAgo(data.lastEventAt)}</p>
+          {loadError ? (
+            <button type="button" className="status-warn" onClick={handleRetry}>
+              refresh failed — retry
+            </button>
+          ) : (
+            <small className={stale ? "status-warn" : ""}>{stale ? "stale — check cron" : "healthy"}</small>
+          )}
+        </div>
+      </div>
+      <div className="status-item">
+        <Clock className="size-4" />
+        <div>
+          <p>{`${data.awaiting} waiting · ${data.running} running`}</p>
+          <small>{`${data.completedToday} completed today`}</small>
+        </div>
+      </div>
+      <div className="status-item" title={data.blocked > 0 ? "Agents stopped by intent guardrails" : "No intent violations"}>
+        <ShieldAlert className="size-4" />
+        <div>
+          <p>{data.blocked > 0 ? `${data.blocked} blocked` : "guarded"}</p>
+          <small>intent guardrails</small>
+        </div>
+      </div>
+      <div className="status-item">
+        <Zap className="size-4" />
+        <div>
+          <p>Auto-approve {data.autoApprove ? "on" : "off"}</p>
+          <small>settings → automation</small>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const STAGES = ["Event", "Proposed", "Approved", "Running", "PR opened"];
+
+export function PipelineStages({ counts }: { counts?: number[] }) {
+  return (
+    <section className="panel pipeline" aria-label="Agent pipeline">
+      {STAGES.map((label, i) => (
+        <React.Fragment key={label}>
+          <div className="pipe-stage">
+            <strong>{counts?.[i] ?? "·"}</strong>
+            <span>{label}</span>
+          </div>
+          {i < STAGES.length - 1 && <span className="pipe-link" />}
+        </React.Fragment>
+      ))}
+    </section>
+  );
+}

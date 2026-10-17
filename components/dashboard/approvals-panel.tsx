@@ -1,0 +1,157 @@
+"use client";
+
+import React, { useState, useEffect, useCallback } from "react";
+import { ShieldCheck, Check, X } from "lucide-react";
+import { Approval, ApprovalKind } from "@/types/solar-types";
+import { RowSkeleton, FetchError } from "@/components/common/loading";
+
+const KIND_LABELS: Record<ApprovalKind, string> = {
+  run_agent: "Run agent",
+  publish_pr: "Open PR",
+  merge: "Merge PR",
+  github_comment: "Post comment",
+  close_issue: "Close issue",
+  close_pr: "Close PR",
+};
+
+function describeApproval(a: Approval): string {
+  try {
+    const ref = JSON.parse(a.ref_id) as Record<string, unknown>;
+    if (a.kind === "publish_pr" && typeof ref.branch === "string") {
+      return `Branch ${ref.branch} in ${String(ref.repo ?? "")} is ready to become a PR.`;
+    }
+    if (a.kind === "merge" && typeof ref.prNumber !== "undefined") {
+      return `Merge PR #${String(ref.prNumber)} in ${String(ref.repo ?? "")}.`;
+    }
+    if (a.kind === "close_issue") {
+      return `Close issue #${String(ref.issue_number ?? ref.number ?? "?")} in ${String(ref.repo ?? "")}${ref.reason ? ` as ${String(ref.reason)}` : ""}.`;
+    }
+    if (a.kind === "close_pr") {
+      return `Close PR #${String(ref.pr_number ?? ref.number ?? "?")} in ${String(ref.repo ?? "")} without merging.`;
+    }
+    if (a.kind === "github_comment" && typeof ref.body === "string") {
+      return `Post comment on ${String(ref.repo ?? "")}#${String(ref.number ?? "?")}: "${String(ref.body).slice(0, 120)}"`;
+    }
+  } catch {
+    // ref_id is a plain id
+  }
+  if (a.kind === "run_agent") return "A sub-agent is ready and waiting to start work.";
+  return "Waiting for your decision.";
+}
+
+export function ApprovalsPanel() {
+  const [approvals, setApprovals] = useState<Approval[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [deciding, setDeciding] = useState<string | null>(null);
+  const [decideError, setDecideError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/approvals?status=pending");
+      if (!res.ok) throw new Error(`load failed (${res.status})`);
+      const data = (await res.json()) as { approvals: Approval[] };
+      setApprovals(data.approvals ?? []);
+      setLoadError(null);
+    } catch {
+      setLoadError("Couldn't load approvals. Retry — pending items may be hidden.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const handleRetry = useCallback(() => {
+    setIsLoading(true);
+    setLoadError(null);
+    void load().catch(() => {});
+  }, [load]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load().catch(() => {});
+    const t = setInterval(() => void load().catch(() => {}), 15000);
+    const onRefresh = () => void load().catch(() => {});
+    window.addEventListener("solar:refresh", onRefresh);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("solar:refresh", onRefresh);
+    };
+  }, [load]);
+
+  const decide = async (id: string, decision: "approved" | "rejected") => {
+    setDeciding(id);
+    setDecideError(null);
+    try {
+      const res = await fetch("/api/approvals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, decision }),
+      });
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(data?.error ?? `decide failed (${res.status})`);
+      }
+      // Only remove the card on success — a failed decision stays actionable.
+      setApprovals((prev) => prev.filter((a) => a.id !== id));
+    } catch (err) {
+      setDecideError((err as Error).message);
+    } finally {
+      setDeciding(null);
+    }
+  };
+
+  return (
+    <section className="panel">
+      <div className="panel-heading">
+        <h2>Approvals {approvals.length > 0 && <span className="approval-count">{approvals.length}</span>}</h2>
+        <ShieldCheck className="size-3.5" />
+      </div>
+
+      <div className="item-list">
+        {isLoading ? (
+          <div aria-busy="true">
+            <RowSkeleton />
+            <RowSkeleton />
+          </div>
+        ) : null}
+        {loadError && !isLoading ? (
+          <FetchError message={loadError} onRetry={handleRetry} />
+        ) : null}
+        {decideError ? (
+          <FetchError message={decideError} />
+        ) : null}
+        {!isLoading && !loadError && approvals.length === 0 && (
+          <div className="panel-empty">Nothing waiting. New agent proposals and tuning suggestions will appear here.</div>
+        )}
+        {approvals.map((a) => (
+          <div key={a.id} className="item">
+            <div className="item-body">
+              <div className="item-title">
+                {KIND_LABELS[a.kind]} <span className="item-meta">{new Date(a.created_at ?? "").toLocaleString()}</span>
+              </div>
+              <div className="item-desc">{describeApproval(a)}</div>
+              <div className="approval-actions">
+                <button
+                  type="button"
+                  disabled={deciding === a.id}
+                  onClick={() => void decide(a.id, "approved")}
+                  className="approval-btn approval-approve"
+                >
+                  <Check className="size-3.5" /> Approve
+                </button>
+                <button
+                  type="button"
+                  disabled={deciding === a.id}
+                  onClick={() => void decide(a.id, "rejected")}
+                  className="approval-btn approval-reject"
+                >
+                  <X className="size-3.5" /> Reject
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}

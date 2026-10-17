@@ -1,0 +1,14 @@
+import { registerSandboxFileTools } from "./sandbox-files";
+import { registerSandboxExecTools } from "./sandbox-exec";
+import { registerGithubTools } from "./github";
+import { registerOrchestratorTools } from "./orchestrator-tools";
+import { registerWebTools } from "./web";
+
+/** Register every solar tool exactly once per process (idempotent). */
+export function ensureAllTools(): void {
+  registerSandboxFileTools();
+  registerSandboxExecTools();
+  registerGithubTools();
+  registerOrchestratorTools();
+  registerWebTools();
+}

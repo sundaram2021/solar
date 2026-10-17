@@ -1,0 +1,155 @@
+"use client";
+
+import React from "react";
+import {
+  Bot,
+  Cpu,
+  ScrollText,
+  Activity,
+  ShieldCheck,
+  ListVideo,
+  Settings,
+  LogOut,
+  ChevronsLeft,
+  ChevronsRight,
+} from "lucide-react";
+import { SolarMark } from "@/components/common/solar-mark";
+import { LiveDot } from "@/components/common/live-dot";
+import { SolarUser } from "@/types/solar-types";
+import { getUserInitials } from "@/lib/format-helpers";
+
+export type SolarNav =
+  | "orchestrator"
+  | "agents"
+  | "prompts"
+  | "traces"
+  | "guardrails"
+  | "activity"
+  | "settings";
+
+export const SOLAR_NAV_LABELS: Record<SolarNav, string> = {
+  orchestrator: "Orchestrator",
+  agents: "Agents",
+  prompts: "Prompts",
+  traces: "Traces",
+  guardrails: "Guardrails",
+  activity: "Activity",
+  settings: "Settings",
+};
+
+const MAIN_NAV: { id: SolarNav; icon: React.ReactNode }[] = [
+  { id: "orchestrator", icon: <Bot className="size-5" /> },
+  { id: "agents", icon: <Cpu className="size-5" /> },
+  { id: "prompts", icon: <ScrollText className="size-5" /> },
+  { id: "traces", icon: <Activity className="size-5" /> },
+  { id: "guardrails", icon: <ShieldCheck className="size-5" /> },
+  { id: "activity", icon: <ListVideo className="size-5" /> },
+];
+
+interface DashboardSidebarProps {
+  user: SolarUser | null;
+  isOpen: boolean;
+  activeNav: SolarNav;
+  setActiveNav: (nav: SolarNav) => void;
+  onLogout: () => void;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+}
+
+export function DashboardSidebar({
+  user,
+  isOpen,
+  activeNav,
+  setActiveNav,
+  onLogout,
+  collapsed,
+  onToggleCollapse,
+}: DashboardSidebarProps) {
+  const initials = getUserInitials(user?.name);
+  const displayName = user?.name || "User";
+  const displayHandle = user?.githubUsername ? `@${user.githubUsername}` : "";
+
+  return (
+    <aside className={`sidebar ${isOpen ? "open" : ""} ${collapsed ? "collapsed" : ""}`}>
+      <div className="brand-row">
+        <span className="brand">
+          <SolarMark />
+          <span className="brand-name">Solar</span>
+        </span>
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          className="collapse-btn"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? <ChevronsRight className="size-5" /> : <ChevronsLeft className="size-5" />}
+        </button>
+      </div>
+
+      <div className="workspace">
+        <span className="workspace-avatar">{initials[0]}</span>
+        <div className="collapse-hide">
+          <div>
+            <strong>Solar workspace</strong>
+          </div>
+        </div>
+      </div>
+
+      <div className="nav-label collapse-hide">WORKSPACE</div>
+      <nav>
+        {MAIN_NAV.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={activeNav === item.id ? "active" : ""}
+            onClick={() => setActiveNav(item.id)}
+            title={SOLAR_NAV_LABELS[item.id]}
+          >
+            {item.icon}
+            <span className="collapse-hide">{SOLAR_NAV_LABELS[item.id]}</span>
+          </button>
+        ))}
+      </nav>
+
+      <div className="sidebar-bottom">
+        <nav>
+          <button
+            type="button"
+            className={activeNav === "settings" ? "active" : ""}
+            onClick={() => setActiveNav("settings")}
+            title="Settings"
+          >
+            <Settings className="size-5" />
+            <span className="collapse-hide">Settings</span>
+          </button>
+        </nav>
+
+        <div className="sidebar-status collapse-hide">
+          <div>
+            <LiveDot /> All systems operational
+          </div>
+        </div>
+
+        <div className="account">
+          <span className="avatar">{initials}</span>
+          <div className="collapse-hide">
+            <div>
+              <strong>{displayName}</strong>
+              <small>{displayHandle ? `${displayHandle} · GitHub` : "GitHub"}</small>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onLogout}
+            title="Sign out"
+            aria-label="Sign out"
+            className="p-1 rounded hover:bg-accent cursor-pointer"
+          >
+            <LogOut className="size-4 text-muted-foreground hover:text-foreground" />
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+}
