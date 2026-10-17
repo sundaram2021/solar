@@ -1,0 +1,23 @@
+.gitignore
+  s_a9b045901c65b4::t_c30b1666c077dd 15
+supabase/migrations/20261015_solar_schema.sql
+  s_a9b045901c65b4::t_f0a1d876688d0c 79
+  s_a9b045901c65b4::t_b6fbb58f2d9c23 276-292
+  s_a9b045901c65b4::t_8447ae9c830053 69-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ad56ce7bb7ff9f035bb027f495c86ecf662f0c2f",
+  "prompts": {},
+  "sessions": {
+    "s_a9b045901c65b4": {
+      "agent_id": {
+        "tool": "opencode",
+        "id": "ses_eb5dcde4bffefVkQgp6yPAqT94",
+        "model": "unknown"
+      },
+      "human_author": "Sundaram Kumar Jha <jhasundaram@outlook.com>"
+    }
+  }
+}
